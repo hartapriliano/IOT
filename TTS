@@ -1,0 +1,91 @@
+#define BLYNK_PRINT Serial
+
+
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <BlynkSimpleEsp32.h>
+#include <DHT.h>
+
+
+char auth[] = "iASDw34_eJOr7jWaZfjCas3CLskoprY-";
+
+char ssid[] = "arm123";
+char pass[] = "ukdw1234";
+
+#define DHTPIN 23      
+
+
+#define DHTTYPE DHT11 
+
+
+DHT dht(DHTPIN, DHTTYPE);
+BlynkTimer timer;
+int sensor_cahaya,Y,ldr=39;
+int slider_cahaya, slider_suhu, button, lampu2 = 22, lampu3 = 18;
+int t;
+WidgetLED lampu(V6);
+WidgetLED lampu1(V7);
+
+BLYNK_WRITE(V4){
+  slider_cahaya = param.asInt();
+}
+
+BLYNK_WRITE(V5){
+  slider_suhu = param.asInt();
+}
+
+BLYNK_WRITE(V8){
+  button = param.asInt();
+}
+
+void sendSensor()
+{
+  t = dht.readTemperature();
+  if (isnan(t)) {
+    Serial.println("Failed to read from DHT sensor!");
+    return;
+  }
+  Blynk.virtualWrite(V1, t);
+  Blynk.virtualWrite(V3, t);
+}
+
+void setup()
+{
+  Serial.begin(9600);
+
+  Blynk.begin(auth, ssid, pass, IPAddress(72,44,45,151), 8080);
+
+  dht.begin();
+
+  timer.setInterval(1000L, sendSensor);pinMode(lampu2, OUTPUT); pinMode (lampu3, OUTPUT);
+}
+
+void loop()
+{
+  Blynk.run();
+  
+while(button == 1){
+  timer.run();
+  sensor_cahaya = analogRead(ldr);
+  Y = 0.009768*sensor_cahaya + 10;
+Blynk.virtualWrite(V0, Y);
+Blynk.virtualWrite(V2, Y);
+
+if (slider_cahaya <= Y) {
+  lampu.on();
+  digitalWrite(lampu2, HIGH);
+}
+else{
+   lampu.off();
+  digitalWrite(lampu2, LOW);
+}
+if (slider_suhu <= t) {
+  lampu1.on();
+  digitalWrite(lampu3, HIGH);
+}
+else{
+   lampu1.off();
+  digitalWrite(lampu3, LOW);
+    }
+  }
+}
