@@ -1,0 +1,148 @@
+#include <MQTT.h>
+//#include <MQTTClient.h>
+#include <WiFi.h>
+#include <ESP32Servo.h>
+
+WiFiClient net;
+MQTTClient client;
+
+int pinSM;
+int tutup = 60;
+float convertKelembapan;
+bool terbuka = false;
+bool hidup = false;
+String status_keran = "tertutup";
+String hidupAtauMati = "mati";
+Servo servo_33;
+char sys[] = "1";
+char toChar[10];
+
+const char ssid[] = "arm123";
+const char pass[] = "ukdw1234";
+
+void connect() {
+  Serial.print("checking wifi...");
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
+    delay(1000);
+  }
+
+  Serial.print("\nconnecting...");
+  while (!client.connect("IniBoard", "hartaprojectukdw", "5jVuGdSR8d7oVVXL")) {
+    Serial.print(".");
+    delay(1000);
+  }
+
+  Serial.println("\nconnected!");
+
+  client.subscribe("/sistem");
+}
+
+void messageReceived(String &topic, String &payload) {
+  Serial.println("incoming: " + topic + " - " + payload);
+  if(topic == "/sistem"){
+    if(payload == sys){
+      hidup = true;
+      Serial.println("Sistem hidup!");
+      client.publish("/sistem/stat","\nSistem hidup");
+    }
+    else hidup = false;
+  }
+}
+
+void ukurKelembapan(){
+  pinSM = analogRead(36);
+  convertKelembapan = (pinSM/40.96)+0.02;
+//  publishMessageKelembapan();
+  Serial.print(convertKelembapan);
+  Serial.println("%");
+  client.publish("/sistem/kelembapan",itoa(convertKelembapan, toChar, 10));
+}
+
+void bukaKeran(){
+  int i;
+  if(!terbuka){
+    Serial.print("Sedang membuka keran");
+    client.publish("/sistem/keran","Sedang membuka keran");
+    for(i=60; i<=150; i++){
+      servo_33.write(i);
+      if(i%3==0)Serial.print(".");
+//      delay(25);
+    }
+    terbuka = true;
+    Serial.println("\nKeran sudah terbuka penuh");
+    client.publish("/sistem/keran","\nKeran sudah terbuka penuh");
+  }else{
+    Serial.println("Keran masih terbuka");
+    client.publish("/sistem/keran", "\n Keran masih terbuka");
+  }
+}
+
+void tutupKeran(){
+  int i;
+  if(terbuka){
+    Serial.print("Sedang menutup keran");
+    client.publish("/sistem/keran","Sedang menutup keran");
+    for(i=150; i>=60; i--){
+      servo_33.write(i);
+      if(i%3==0)Serial.print(".");
+//      delay(15);
+    }
+    terbuka = false;
+    Serial.println("\nKeran sudah tertutup");
+    client.publish("/sistem/keran","\nKeran sudah tertutup");
+  }else{
+    Serial.println("Keran masih tertutup");
+    client.publish("/sistem/keran","\nKeran masih tertutup");
+  }
+}
+
+void bukaTutupKeran(){
+  if(convertKelembapan<=10.0){
+    bukaKeran();
+  }else if(convertKelembapan>=50.0){
+    tutupKeran();
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  servo_33.attach(33);
+  pinMode(36, INPUT);
+  WiFi.begin(ssid, pass);
+  client.begin("public.cloud.shiftr.io", net);
+  client.onMessage(messageReceived);
+  connect();
+}
+
+void cekStatusKeran(){
+  if(terbuka) status_keran = "terbuka";
+  else status_keran = "tertutup";
+}
+
+void cetakOnOff(){
+  if(hidup)hidupAtauMati = "nyala";
+  else hidupAtauMati = "mati";
+  Serial.println("Sistem nyala/mati: " + hidupAtauMati); 
+}
+
+void loop() {
+  client.loop();
+  delay(10); 
+  if (!client.connected()) {
+    connect();
+  }
+  cetakOnOff();
+  if(!hidup){
+    terbuka = true;
+    servo_33.write(tutup);
+    terbuka = false;
+    delay(2000);  
+  }
+  else{
+    ukurKelembapan();
+    bukaTutupKeran();
+    cekStatusKeran();
+  }
+  delay(1000);
+}
