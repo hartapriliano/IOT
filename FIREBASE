@@ -1,0 +1,131 @@
+#include <WiFi.h>
+#include <FirebaseESP32.h>
+#include <ESP32Servo.h>
+
+#define WIFI_SSID "arm123"
+#define WIFI_PASSWORD "ukdw1234"
+
+#define FIREBASE_HOST "https://hartaprojectukdw-default-rtdb.firebaseio.com/"
+
+#define FIREBASE_AUTH "Vxwa1cZdhY9lauvIH0U8EFHnhPKIl0tUnYR13C89"
+
+FirebaseData fbdo;
+
+int pinSM;
+int tutup = 60;
+float convertKelembapan;
+bool terbuka = false;
+bool hidup = true;
+String status_keran = "tertutup";
+String hidupAtauMati = "mati";
+Servo servo_33;
+
+void koneksiDB(){
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("Connecting to Wi-Fi");
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    Serial.print(".");
+    delay(300);
+  }
+  Serial.println();
+  Serial.print("Connected with IP: ");
+  Serial.println(WiFi.localIP());
+  Serial.println();
+
+  Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH);
+  Firebase.reconnectWiFi(true);
+
+  Firebase.setReadTimeout(fbdo, 1000);
+  Firebase.setwriteSizeLimit(fbdo, "tiny");
+}
+
+void ukurKelembapan(){
+  pinSM = analogRead(36);
+  convertKelembapan = (pinSM/40.96)+0.02;
+  Serial.print(convertKelembapan);
+  Serial.println("%");
+  Firebase.setInt(fbdo,"/sistem/kelembaban",convertKelembapan);
+}
+
+void bukaKeran(){
+  int i;
+  if(!terbuka){
+    Serial.print("Sedang membuka keran");
+    Firebase.setString(fbdo,"/sistem/keran","Sedang Membuaka keran");
+    for(i=60; i<=150; i++){
+      servo_33.write(i);
+      if(i%3==0)Serial.print(".");
+    }
+    terbuka = true;
+    Serial.println("\nKeran sudah terbuka penuh");
+    Firebase.setString(fbdo,"/sistem/keran","Keran Sudah Terbuka Penuh");
+  }else{
+    Serial.println("Keran masih terbuka");
+    Firebase.setString(fbdo,"/sistem/keran","Keran masih terbuka");
+  }
+}
+
+void tutupKeran(){
+  int i;
+  if(terbuka){
+    Serial.print("Sedang menutup keran");
+    Firebase.setString(fbdo,"/sistem/keran","Sedang Menutup Keran");
+    for(i=150; i>=60; i--){
+      servo_33.write(i);
+      if(i%3==0)Serial.print(".");
+    }
+    terbuka = false;
+    Serial.println("\nKeran sudah tertutup");
+    Firebase.setString(fbdo,"/sistem/keran","Keran sudah tertutup");
+  }else{
+    Serial.println("Keran masih tertutup");
+    Firebase.setString(fbdo,"/sistem/keran","Keran masih tertutup");
+  }
+}
+
+void bukaTutupKeran(){
+  if(convertKelembapan<=10.0){
+    bukaKeran();
+  }else if(convertKelembapan>=50.0){
+    tutupKeran();
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  servo_33.attach(33);
+  pinMode(36, INPUT);
+  koneksiDB();
+}
+
+void cekStatusKeran(){
+  if(terbuka) status_keran = "terbuka";
+  else status_keran = "tertutup";
+}
+
+void cetakOnOff(){
+  if(hidup){
+    Firebase.setString(fbdo,"/sistem/stat","Sistem hidup");
+    hidupAtauMati = "nyala";
+  }
+  else 
+  Firebase.setString(fbdo,"/sistem/stat","Sistem Mati");
+  hidupAtauMati = "mati";
+}
+
+void loop() {
+  cetakOnOff();
+  if(!hidup){
+    terbuka = true;
+    servo_33.write(tutup);
+    terbuka = false;
+    delay(2000);  
+  }
+  else{
+    ukurKelembapan();
+    bukaTutupKeran();
+    cekStatusKeran();
+  }
+  delay(1000);
+}
